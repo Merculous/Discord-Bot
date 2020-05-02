@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import subprocess
+
+
+def ensureTools():
+    freeze = subprocess.run(['pip', 'freeze'], stdout=subprocess.PIPE, universal_newlines=True)
+    if 'discord.py' not in freeze.stdout:
+        print('discord.py is missing, installing...')
+        subprocess.run(['pip', 'install', 'discord.py'])
+        sys.exit()
+    elif 'iospytools' not in freeze.stdout:
+        print('iospytools is missing, installing...')
+        subprocess.run(['pip', 'install', 'git+https://github.com/merculous/ios-python-tools'])
+        sys.exit()
+
+
+try:
+    from discord.ext import commands
+    from iospytools import utils
+    from iospytools.iphonewiki import iPhoneWiki
+    from iospytools.ipswapi import APIParser
+    from iospytools.manifest import BuildManifest
+    from iospytools.tss import TSS
+except ImportError as error:
+    print('Oof, got error:', error)
+    ensureTools()
+
+# Ensures my ios-python-tools project is installed
+
+
+def getToken():
+    try:
+        open('token.txt')
+    except FileNotFoundError:
+        print('token.txt does not exist!')
+        raise
+    else:
+        with open('token.txt') as f:
+            data = f.read().strip()
+            if data:
+                print('Got token:', data)
+            else:
+                sys.exit('Did not find anything inside token.txt, place your token inside it to continue.')
+            return data
+
+
+bot = commands.Bot('!')
+
+
+@bot.event
+async def on_ready():
+    print('Bot is ready!')
+
+
+@bot.command()
+async def buildid(ctx, device, version):
+    print('User asked to convert an iOS to its buildid!')
+    print(device, version)
+    api = APIParser(device, version)
+    await ctx.send(api.iOSToBuildid())
+
+
+@bot.command()
+async def codename(ctx, device, version):
+    print('User asked to get the codename of an iOS!')
+    print(device, version)
+    api = APIParser(device, version)
+    api.downloadFileFromArchive('BuildManifest.plist')
+    manifest = BuildManifest()
+    await ctx.send(manifest.getCodename())
+
+# TODO Need to have this smaller and or single files only
+
+
+@bot.command()
+async def keys(ctx, device, version):
+    print('Grabbing keys from iphonewiki!')
+    print(device, version)
+    wiki = iPhoneWiki(device, version)
+    for stuff in wiki.getWikiKeys():
+        await ctx.send(stuff)
+
+
+@bot.command()
+async def signed(ctx, device):
+    print('User asked to view all signed iOS versions of a device!')
+    print(device)
+    api = APIParser(device, None)
+    for stuff in api.signed():
+        await ctx.send(stuff)
+
+
+@bot.command()
+async def saveblobs(ctx, ecid, device):
+    print('User asked to save blobs!')
+    device = TSS(device, ecid)
+    device.saveBlobs()
+    await ctx.send(f'Saved blobs for {device} {ecid}')
+
+if os.path.exists('BuildManifest.plist'):
+    os.remove('BuildManifest.plist')
+
+utils.clean()
+bot.run(getToken())
